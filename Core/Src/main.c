@@ -49,7 +49,7 @@ I2C_HandleTypeDef hi2c1;
 I2S_HandleTypeDef hi2s3;
 DMA_HandleTypeDef hdma_spi3_tx;
 
-SPI_HandleTypeDef hspi2;
+SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim6;
 
@@ -64,10 +64,10 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_SPI2_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_I2S3_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -137,6 +137,11 @@ static bool uart_read_byte(uint8_t *byte)
 	return (HAL_UART_Receive(&huart2, byte, sizeof(*byte), 0) == HAL_OK);
 }
 
+static void delete_file(void)
+{
+	lfs_remove(&lfs, "test.mp3");
+}
+
 static void open_file(void)
 {
 	const int err = lfs_file_open(&lfs, &file, "test.mp3", LFS_O_RDWR | LFS_O_TRUNC | LFS_O_CREAT);
@@ -196,10 +201,10 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART2_UART_Init();
-  MX_SPI2_Init();
   MX_I2C1_Init();
   MX_I2S3_Init();
   MX_TIM6_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
   printf("Mounting LFS...\n");
@@ -210,52 +215,6 @@ int main(void)
   }
 
   struct xmodem_server xmodem;
-  xmodem_server_init(&xmodem, uart_write_byte, NULL);
-
-  const uint32_t start_tick = HAL_GetTick();
-  const uint32_t transfer_start_timeout = 5000;
-
-  while (!xmodem_server_is_done(&xmodem)) {
-	  if (((HAL_GetTick() - start_tick) >= transfer_start_timeout) && (xmodem_server_get_state(&xmodem) == XMODEM_STATE_START)) {
-		  break;
-	  }
-  	  uint8_t byte;
- 	  if (uart_read_byte(&byte)) {
- 		  xmodem_server_rx_byte(&xmodem, byte);
- 	  }
-
- 	  uint8_t payload[XMODEM_MAX_PACKET_SIZE];
- 	  uint32_t block_nr;
- 	  const int rx_data_len = xmodem_server_process(&xmodem, payload, &block_nr, HAL_GetTick());
- 	  if (rx_data_len > 0) {
- 		  if (block_nr == 0) {
- 			  open_file();
- 		  }
- 		  write_file(payload, rx_data_len);
- 		  xmodem_server_acknowledge(&xmodem);
- 	  }
-  }
-  if (xmodem_server_is_done(&xmodem)) {
-      close_file();
-  }
-  if (xmodem_server_get_state(&xmodem) == XMODEM_STATE_FAILURE) {
-      printf("Failed to receive data!\n");
-      halt();
-  }
-
-  const size_t blocks_used = lfs_fs_size(&lfs);
-  const size_t blocks_free = W25Q256_SECTORS_COUNT - blocks_used;
-
-  printf("\nFilesystem info:\n");
-  printf("\tfree space: %lu\n", blocks_free * W25Q256_SECTOR_SIZE);
-  printf("\tused space: %lu\n", blocks_used * W25Q256_SECTOR_SIZE);
-  printf("\ttotal space: %lu\n", W25Q256_SECTORS_COUNT * W25Q256_SECTOR_SIZE);
-  printf("\tpercent of usage: %u%%\n\n", (100 * blocks_used) / (blocks_free + blocks_used));
-
-
-  player_init(&hi2s3, &hi2c1, &lfs);
-  player_start("test.mp3");
-  player_set_volume(-66);
 
   /* USER CODE END 2 */
 
@@ -263,7 +222,52 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  player_task();
+	/* Initialize XMODEM server and wait for connection */
+//	printf("Awaiting XMODEM connection...\n");
+	xmodem_server_init(&xmodem, uart_write_byte, NULL);
+	while (!xmodem_server_is_done(&xmodem)) {
+		uint8_t byte;
+		if (uart_read_byte(&byte)) {
+		  xmodem_server_rx_byte(&xmodem, byte);
+		}
+
+		uint8_t payload[XMODEM_MAX_PACKET_SIZE];
+		uint32_t block_nr;
+		const int rx_data_len = xmodem_server_process(&xmodem, payload, &block_nr, HAL_GetTick());
+		if (rx_data_len > 0) {
+		  if (block_nr == 0) {
+			  delete_file();
+			  open_file();
+		  }
+		  write_file(payload, rx_data_len);
+		  xmodem_server_acknowledge(&xmodem);
+		}
+	}
+	if (xmodem_server_is_done(&xmodem)) {
+		close_file();
+	}
+	if (xmodem_server_get_state(&xmodem) == XMODEM_STATE_FAILURE) {
+		printf("Failed to receive data!\n");
+		halt();
+	}
+
+//	const size_t blocks_used = lfs_fs_size(&lfs);
+//	const size_t blocks_free = W25Q256_SECTORS_COUNT - blocks_used;
+
+//	printf("\nFilesystem info:\n");
+//	printf("\tfree space: %lu\n", blocks_free * W25Q256_SECTOR_SIZE);
+//	printf("\tused space: %lu\n", blocks_used * W25Q256_SECTOR_SIZE);
+//	printf("\ttotal space: %lu\n", W25Q256_SECTORS_COUNT * W25Q256_SECTOR_SIZE);
+//	printf("\tpercent of usage: %u%%\n\n", (100 * blocks_used) / (blocks_free + blocks_used));
+
+	/* Play newly received file */
+//	printf("Starting playback...\n");
+	player_init(&hi2s3, &hi2c1, &lfs);
+	player_start("test.mp3");
+	player_set_volume(-50);
+	while (player_get_state() == PLAYER_PLAYING) {
+		player_task();
+	}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -293,7 +297,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 5;
-  RCC_OscInitStruct.PLL.PLLN = 135;
+  RCC_OscInitStruct.PLL.PLLN = 180;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
@@ -310,7 +314,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
   {
     Error_Handler();
   }
@@ -385,40 +389,40 @@ static void MX_I2S3_Init(void)
 }
 
 /**
-  * @brief SPI2 Initialization Function
+  * @brief SPI1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_SPI2_Init(void)
+static void MX_SPI1_Init(void)
 {
 
-  /* USER CODE BEGIN SPI2_Init 0 */
+  /* USER CODE BEGIN SPI1_Init 0 */
 
-  /* USER CODE END SPI2_Init 0 */
+  /* USER CODE END SPI1_Init 0 */
 
-  /* USER CODE BEGIN SPI2_Init 1 */
+  /* USER CODE BEGIN SPI1_Init 1 */
 
-  /* USER CODE END SPI2_Init 1 */
-  /* SPI2 parameter configuration*/
-  hspi2.Instance = SPI2;
-  hspi2.Init.Mode = SPI_MODE_MASTER;
-  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi2.Init.CRCPolynomial = 10;
-  if (HAL_SPI_Init(&hspi2) != HAL_OK)
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN SPI2_Init 2 */
+  /* USER CODE BEGIN SPI1_Init 2 */
 
-  /* USER CODE END SPI2_Init 2 */
+  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -476,7 +480,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 921600;
+  huart2.Init.BaudRate = 2000000;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -567,14 +571,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : SPI1_SCK_Pin */
-  GPIO_InitStruct.Pin = SPI1_SCK_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
-  HAL_GPIO_Init(SPI1_SCK_GPIO_Port, &GPIO_InitStruct);
-
   /*Configure GPIO pin : BOOT1_Pin */
   GPIO_InitStruct.Pin = BOOT1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
@@ -624,14 +620,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(OTG_FS_OverCurrent_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PB4 PB5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : MEMS_INT2_Pin */
   GPIO_InitStruct.Pin = MEMS_INT2_Pin;

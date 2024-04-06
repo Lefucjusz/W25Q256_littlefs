@@ -49,7 +49,7 @@ typedef struct
 #define W25Q256_DUMMY_BYTE 0xFF
 
 /* Configuration */
-#define W25Q256_SPI_PORT hspi2
+#define W25Q256_SPI_PORT hspi1
 #define W25Q256_SPI_TIMEOUT_MS 1000
 
 #define W25Q256_CS_GPIO GPIOB

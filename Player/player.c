@@ -162,6 +162,8 @@ void player_stop(void) {
 		return;
 	}
 
+	lfs_file_close(ctx.lfs, &ctx.fd);
+
 	CS43L22_deinit(ctx.i2c);
 	HAL_I2S_DMAStop(ctx.i2s);
 	drmp3_uninit(&ctx.mp3);

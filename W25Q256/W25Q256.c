@@ -8,6 +8,7 @@
 #include "W25Q256.h"
 #include <stdbool.h>
 #include <errno.h>
+#include "delay.h"
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
@@ -76,7 +77,7 @@ static bool W25Q256_wait(uint16_t timeout_ms)
 			wait_status = true;
 			break;
 		}
-		HAL_Delay(1);
+		delay_us(100);
 	}
 
 	return wait_status;
