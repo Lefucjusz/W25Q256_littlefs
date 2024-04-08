@@ -99,6 +99,7 @@ int player_start(const char *path) {
 	/* Initialize decoder */
 	const drmp3_bool32 drmp3_ret = drmp3_init(&ctx.mp3, on_read, on_seek, NULL, NULL);
 	if (drmp3_ret != DRMP3_TRUE) {
+		lfs_file_close(ctx.lfs, &ctx.fd);
 		return -EIO;
 	}
 
@@ -106,6 +107,7 @@ int player_start(const char *path) {
 	const uint32_t pcm_sample_rate = player_get_pcm_sample_rate();
 	const bool i2s_ret = configure_i2s(pcm_sample_rate);
 	if (!i2s_ret) {
+		lfs_file_close(ctx.lfs, &ctx.fd);
 		drmp3_uninit(&ctx.mp3);
 		return -EINVAL;
 	}
@@ -113,6 +115,7 @@ int player_start(const char *path) {
 	/* Fill buffer with frames */
 	const drmp3_uint64 frames_read = drmp3_read_pcm_frames_s16(&ctx.mp3, PLAYER_BUFFER_SIZE_FRAMES, ctx.dma_buffer);
 	if (frames_read == 0) {
+		lfs_file_close(ctx.lfs, &ctx.fd);
 		drmp3_uninit(&ctx.mp3);
 		return -EIO;
 	}
@@ -120,6 +123,7 @@ int player_start(const char *path) {
 	/* Start DMA */
 	const HAL_StatusTypeDef dma_ret = HAL_I2S_Transmit_DMA(ctx.i2s, (uint16_t *)ctx.dma_buffer, PLAYER_BUFFER_SIZE_SAMPLES);
 	if (dma_ret != HAL_OK) {
+		lfs_file_close(ctx.lfs, &ctx.fd);
 		drmp3_uninit(&ctx.mp3);
 		return -EBUSY;
 	}
@@ -127,6 +131,7 @@ int player_start(const char *path) {
 	/* Initialize DAC */
 	const bool dac_ret = CS43L22_init(ctx.i2c);
 	if (!dac_ret) {
+		lfs_file_close(ctx.lfs, &ctx.fd);
 		drmp3_uninit(&ctx.mp3);
 		return -EBUSY;
 	}

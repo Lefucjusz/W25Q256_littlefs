@@ -27,6 +27,7 @@
 #include "lfs.h"
 #include "player.h"
 #include "xmodem_server.h"
+#include "CS43L22.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -169,6 +170,22 @@ static void close_file(void)
 	}
 }
 
+static int8_t volume = -32 * CS43L22_VOLUME_STEPS_PER_DB;
+
+static void update_volume(void)
+{
+	uint8_t payload[3];
+	/* Limit max volume to -15dB so that some accidental frame matching
+	 * the pattern check below will not deafen anyone... */
+	const int8_t limit = CS43L22_VOLUME_STEPS_PER_DB * 15;
+	if (HAL_UART_Receive(&huart2, payload, sizeof(payload), 4) == HAL_OK) {
+		if ((payload[0] == 0xCA) && (payload[1] <= (INT8_MAX - limit)) && (payload[2] == 0xFE)) {
+			volume = payload[1] - INT8_MAX;
+			player_set_volume(volume);
+		}
+	}
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -216,6 +233,7 @@ int main(void)
 
   struct xmodem_server xmodem;
 
+  player_init(&hi2s3, &hi2c1, &lfs);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -262,10 +280,10 @@ int main(void)
 
 	/* Play newly received file */
 //	printf("Starting playback...\n");
-	player_init(&hi2s3, &hi2c1, &lfs);
 	player_start("test.mp3");
-	player_set_volume(-50);
+	player_set_volume(volume);
 	while (player_get_state() == PLAYER_PLAYING) {
+		update_volume();
 		player_task();
 	}
     /* USER CODE END WHILE */
